@@ -503,23 +503,22 @@ static void handleLive() {
   doc["last_distance_km"] = lastDistance;
   doc["last_energy"] = lastEnergy;;
   doc["last_event_ts"] = (int64_t)lastEventTs;
+  doc["last_event"] = lastEvent;
   // 0 = keine, 1 = Noise, 4 = Disturber, 8 = Lightning (abhängig von Lib – Doku prüfen)
-  String lastEventString=String("");
-  switch (lastEvent){
-    case 0: 
-      lastEventString=String("Kein");
-      break;
-    case 8: 
-      lastEventString=String("Blitz");
-      break;
-    case 1: 
-      lastEventString=String("Rauschen");
-      break;
-    case 4: 
-      lastEventString=String("Störer");
-      break;
-    default:
-      lastEventString=String("Mehrere");
+  String lastEventString;
+  if (lastEvent == 0) {
+    lastEventString = "Kein";
+  } else {
+    bool first = true;
+    auto add = [&](const char* s){ if(!first) lastEventString += ", "; lastEventString += s; first = false; };
+
+    if (lastEvent & 0x08) add("Blitz");      // lightning
+    if (lastEvent & 0x04) add("Störer");     // disturber
+    if (lastEvent & 0x01) add("Rauschen");   // noise
+
+    if (first) { // kein bekanntes Bit gesetzt
+      lastEventString = "Unbekannt";
+    }
   }
   lastEventString=lastEventString + (" :: Wert binär =") + String(lastEvent,BIN);
   doc["last_event_string"] = lastEventString;
@@ -775,6 +774,7 @@ void loop() {
     lastDistance = 63;
     lastEnergy = 0;
     lastEventMs = millis();
+    lastEventTs = 0;
     setLedsForDistance(lastDistance);
   }
 }
