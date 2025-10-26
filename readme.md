@@ -16,6 +16,17 @@ Verwendet wird
 - **AS3935 IRQ → ESP32‑C3 GPIO10** (im Code `PIN_AS3935_IRQ`)
 - 4 LEDs (mit Vorwiderständen) an die Pins `3, 4, 5, 1` gegen GND
 
+### Verbesserung der Antenne des ESP32-C3 
+
+lohnt sich und kann so gemacht werden:
+https://peterneufeld.wordpress.com/2025/03/04/esp32-c3-supermini-antenna-modification/?utm_source=chatgpt.com
+
+Im Kern nimmt man hier 
+- 1mm Kupferdraht, 31mm lang ($\lambda/4$)
+- Am Fuß Schleife mit Durchmesser 5mm (mm 5mm-Bohrer wickeln), so, dass dieser Teil der Antenne genau auf die Keramik-Antenne passt
+- geraden Teil hoch biegen (Schleife ist links, dann wird rechter Teil hoch gebogen)
+- Einfach über die Keramikantenne klemmen und fest löten
+
 ## LED-Logik
 
 AS3935 liefert folgende Distanzschätzung: 

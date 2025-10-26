@@ -48,6 +48,12 @@ Library: https://github.com/sparkfun/SparkFun_AS3935_Lightning_Detector_Arduino_
 
 #include "secrets.h"
 
+// Aktiviere (Define) für Debugging mit der seriellen Schnittstelle
+//#define SERIALDEBUG
+
+// Eventmaske: 0b1000 = BLitz, 0b0100 = Störer, 0b0001 = Noise too high
+#define EVENT_MASK 0b1000
+
 // =============================
 // Pins & Konfiguration
 // =============================
@@ -181,19 +187,27 @@ static unsigned long nextRetryMs = 0;
 void onWiFiEvent(WiFiEvent_t event) {
   switch (event) {
     case ARDUINO_EVENT_WIFI_STA_START:
+#ifdef SERIALDEBUG    
       Serial.println("[WiFi] STA_START → begin connect");
+#endif
       WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
       break;
     case ARDUINO_EVENT_WIFI_STA_CONNECTED:
+#ifdef SERIALDEBUG    
       Serial.printf("[WiFi] Connected to AP (BSSID %s, ch %d)\n",
                     WiFi.BSSIDstr().c_str(), WiFi.channel());
+#endif
       break;
     case ARDUINO_EVENT_WIFI_STA_GOT_IP:
+#ifdef SERIALDEBUG    
       Serial.printf("[WiFi] IP: %s\n", WiFi.localIP().toString().c_str());
+#endif
       nextRetryMs = 0; // reset backoff
       break;
     case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
+#ifdef SERIALDEBUG    
       Serial.printf("[WiFi] Disconnected → retry soon\n");
+#endif
       // kleiner Backoff (10 s)
       nextRetryMs = millis() + 10000;
       break;
@@ -209,12 +223,14 @@ static bool connectWiFi() {
   WiFi.onEvent(onWiFiEvent);
 
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+#ifdef SERIALDEBUG    
   Serial.print("WLAN verbinden...");
+#endif
   unsigned long start = millis();
   while (WiFi.status() != WL_CONNECTED && millis() - start < 20000) {
     delay(250);
-    Serial.print('.');
   }
+#ifdef SERIALDEBUG    
   Serial.println();
   if (WiFi.status() == WL_CONNECTED) {
     Serial.print("Verbunden: ");
@@ -222,7 +238,7 @@ static bool connectWiFi() {
   } else {
     Serial.println("WLAN-Verbindung fehlgeschlagen (Starte AP-Modus wäre Option)");
   }
-
+#endif
   return (WiFi.status() == WL_CONNECTED);
 
 }
@@ -294,12 +310,6 @@ static void handleRoot() {
         <text y="36" text-anchor="middle" class="label">LED4</text>
       </g>
     </svg>
-    <div class="legend">
-      <span class="pill g">LED1</span>
-      <span class="pill g">LED2</span>
-      <span class="pill y">LED3</span>
-      <span class="pill r">LED4</span>
-    </div>
   </div>
 </div>
 
@@ -313,11 +323,6 @@ static void handleRoot() {
   .led.on[data-color="red"]    .dot { fill:#ff5555; filter:url(#glow); }
   .led .label { font: 12px/1.2 system-ui, Segoe UI, Roboto, Arial; fill:#555; }
 
-  .legend { margin-top:.6rem; display:flex; gap:.5rem; flex-wrap:wrap; }
-  .pill { font:12px system-ui, Segoe UI, Roboto, Arial; padding:.2rem .5rem; border-radius:999px; border:1px solid #ddd; background:#fafafa; }
-  .pill.g { border-color:#bfe8cf; background:#ebfff4; }
-  .pill.y { border-color:#f1e2a9; background:#fff8e1; }
-  .pill.r { border-color:#f2b5b5; background:#fff0f0; }
 </style>
 
 
@@ -499,16 +504,23 @@ static void handleLive() {
   doc["last_energy"] = lastEnergy;;
   doc["last_event_ts"] = (int64_t)lastEventTs;
   // 0 = keine, 1 = Noise, 4 = Disturber, 8 = Lightning (abhängig von Lib – Doku prüfen)
-  String lastEventString;
-  if (lastEvent==0){
-    lastEventString=String("Kein");
-  } else if (lastEvent == 1) {
-    lastEventString=String("Rauschen");
-  } else if (lastEvent == 4) {
-    lastEventString=String("Störer");
-  } else if (lastEvent == 8) {
-    lastEventString=String("Blitz");
-  } 
+  String lastEventString=String("");
+  switch (lastEvent){
+    case 0: 
+      lastEventString=String("Kein");
+      break;
+    case 8: 
+      lastEventString=String("Blitz");
+      break;
+    case 1: 
+      lastEventString=String("Rauschen");
+      break;
+    case 4: 
+      lastEventString=String("Störer");
+      break;
+    default:
+      lastEventString=String("Mehrere");
+  }
   lastEventString=lastEventString + (" :: Wert binär =") + String(lastEvent,BIN);
   doc["last_event_string"] = lastEventString;
   doc["last_event_iso"] = lastEventTs ? tsToIso8601(lastEventTs) : String("");
@@ -596,7 +608,9 @@ static bool initAS3935() {
   delay(50);
   //if (!lightning.begin(AS3935_I2C_ADDR, PIN_AS3935_IRQ)) {
   if (!lightning.begin(Wire)) {
+#ifdef SERIALDEBUG    
     Serial.println("AS3935 nicht gefunden – prüfe Adresse/Verkabelung");
+#endif    
     return false;
   } else {
     AS3935_started = true;
@@ -618,7 +632,9 @@ static bool initAS3935() {
   pinMode(PIN_AS3935_IRQ, INPUT);
   attachInterrupt(digitalPinToInterrupt(PIN_AS3935_IRQ), onAs3935Interrupt, RISING);
 
+#ifdef SERIALDEBUG    
   Serial.println("AS3935 initialisiert.");
+#endif
   return true;
 }
 
@@ -676,8 +692,12 @@ void setup() {
   server.on("/api/events", handleEvents);
   server.on("/api/stats", handleStats);
   server.begin();
+#ifdef SERIALDEBUG    
   Serial.println("HTTP-Server gestartet auf Port 80");
+#endif  
 }
+
+uint32_t lastEventMs;
 
 void loop() {
   server.handleClient();
@@ -694,26 +714,29 @@ void loop() {
     interrupts();
 
     // Quelle des Interrupts ermitteln
+    delay(5); // Min. 2ms Delay between interrupt goes high and read the register
     int intSrc = lightning.readInterruptReg();
     // 0 = keine, 1 = Noise, 4 = Disturber, 8 = Lightning (abhängig von Lib – Doku prüfen)
 
     lastEvent = intSrc;
 
     //if (intSrc & 0x08) { // Lightning
-    if (intSrc != 0x00) { // Debugging
+    if (lastEvent & EVENT_MASK) { // Debugging
       uint8_t dist = lightning.distanceToStorm(); // 1..63 km, 0 = sehr nahe, 63 = out of range
       uint32_t energy = lightning.lightningEnergy();
       lastDistance = dist;
       lastEnergy = energy;
       lastEventTs = now;
+      lastEventMs = millis();
       setLedsForDistance(dist);
 
       // in History aufnehmen
       if (history.size() >= HISTORY_MAX) history.pop_front();
       history.push_back({now, dist, energy, lastEvent, AS3935_irq});
-
+    }
+#ifdef SERIALDEBUG    
+    if (lastEvent & 0x08) { // Debugging
       Serial.printf("⚡ Blitz erkannt: Distanz %u km, Energy %lu\n", dist, (unsigned long)energy);
-
     } else if (intSrc & 0x01) { // Rauschen
       Serial.println("~ Noise detected");
     } else if (intSrc & 0x04) { // Störer
@@ -721,18 +744,23 @@ void loop() {
     } else {
       // Unbekannt / kein Event
     }
+#endif
   }
 
   // Optional: alle 10 s Distanz neu abfragen und LEDs aktualisieren
   if (millis() - tLastPoll > 10000) {
     
-    if (lastEvent>0){
+    if (lastEvent & EVENT_MASK){
+#ifdef SERIALDEBUG      
       Serial.println("regular data polling (Event)");
+#endif      
       tLastPoll = millis();
       uint8_t dist = lightning.distanceToStorm();
       uint32_t energy = lightning.lightningEnergy();
       lastDistance = dist;
       lastEnergy = energy;
+      lastEventTs = now;
+      lastEventMs = millis();
       setLedsForDistance(dist);
 
       // in History aufnehmen     
@@ -740,7 +768,14 @@ void loop() {
       history.push_back({now, dist, energy, lastEvent, AS3935_irq});
       lastEvent = 0 ;
     }
+  }
 
+  // Resette alles 10min mach dem letzten Event
+  if ((millis() - lastEventMs) > 10*60*1000) {
+    lastDistance = 63;
+    lastEnergy = 0;
+    lastEventMs = millis();
+    setLedsForDistance(lastDistance);
   }
 }
 
